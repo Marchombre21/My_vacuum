@@ -3,7 +3,7 @@
 <package format="3">
   <name>my_vacuum</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>My first robot</description>
   <maintainer email="bruno.fitte@sfr.fr">Bruno</maintainer>
   <license>TODO: License declaration</license>
 
