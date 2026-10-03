@@ -9,12 +9,12 @@
 
 use defmt::info;
 use embassy_executor::Spawner;
-use embassy_time::{Duration, Timer};
+use embassy_time::{Duration, Ticker};
 use esp_hal::clock::CpuClock;
 use esp_hal::i2c::master::{Config as I2cConfig, I2c};
 use esp_hal::time::Rate;
 use esp_hal::timer::timg::TimerGroup;
-use esp_hal::uart::{Uart, Config};
+use esp_hal::uart::{Config, Uart};
 
 use esp_println as _;
 
@@ -51,9 +51,7 @@ async fn main(spawner: Spawner) -> ! {
     .with_sda(peripherals.GPIO23)
     .into_async();
 
-    let mut uart2 = Uart::new(
-        peripherals.UART2,
-        Config::default())
+    let mut uart2 = Uart::new(peripherals.UART2, Config::default())
         .unwrap()
         .with_rx(peripherals.GPIO16)
         .with_tx(peripherals.GPIO17);
@@ -71,8 +69,8 @@ async fn main(spawner: Spawner) -> ! {
     let mut registers;
     let first_register = [0x3B];
 
-    let mut packet = [0u8; 16];
-
+    let mut packet = [0u8; 17];
+    let mut ticker = Ticker::every(Duration::from_millis(10));
 
     loop {
         registers = [0_u8; 14];
@@ -86,15 +84,21 @@ async fn main(spawner: Spawner) -> ! {
             .await
             .unwrap();
 
+        let mut checksum: u8 = 0;
+        for b in &registers {
+            checksum = checksum.wrapping_add(*b);
+        }
+
+        // On place deux octets de 'démarrage' au début pour que la réception sache quand commencer la lecture.
         packet[0] = 0xAA;
         packet[1] = 0x55;
-        packet[2..].copy_from_slice(&registers);
+        packet[2..16].copy_from_slice(&registers);
+        packet[16] = checksum;
 
         let mut sent = 0;
         while sent < packet.len() {
             sent += uart2.write(&packet[sent..]).unwrap();
         }
-
-        Timer::after(Duration::from_millis(500)).await;
+        ticker.next().await;
     }
 }
