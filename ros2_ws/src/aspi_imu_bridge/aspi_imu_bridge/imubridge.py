@@ -1,10 +1,10 @@
 import math
-import struct
 import statistics
+import struct
+
 from rclpy.node import Node
-from rclpy.qos import qos_profile_rosout_default
-from serial import Serial
 from sensor_msgs.msg import Imu
+from serial import Serial
 
 PACKET_SIZE = 17
 ACC_SENSI = 16384
@@ -30,7 +30,7 @@ class ImuBridge(Node):
 
     def read_serial(self):
         self.buffer += self.ser.read(self.ser.in_waiting)
-        while(True):
+        while True:
             i = self.buffer.find(b'\xaa\x55')
             if (i == -1):
                 del self.buffer[:-1]
@@ -41,11 +41,14 @@ class ImuBridge(Node):
             if len(self.buffer) < PACKET_SIZE:
                 break
 
-            if (sum(self.buffer[2..PACKET_SIZE - 1]) % 256) != self.buffer[PACKET_SIZE - 1]:
+            if (sum(self.buffer[2:PACKET_SIZE - 1]) % 256) != self.buffer[PACKET_SIZE - 1]:
                 del self.buffer[0]
                 continue
 
-            accel_x, accel_y, accel_z, temp_raw, gyro_x, gyro_y, gyro_z = struct.unpack('>7h', self.buffer[2:16])
+            # Voir notes
+            values = struct.unpack('>7h', self.buffer[2:16])
+            accel_x, accel_y, accel_z, temp_raw, gyro_x, gyro_y, gyro_z = values
+            del self.buffer[:PACKET_SIZE]
 
             ax = accel_x / ACC_SENSI * ACC_CONV_M_PER_S
             ay = accel_y / ACC_SENSI * ACC_CONV_M_PER_S
@@ -59,11 +62,25 @@ class ImuBridge(Node):
                 self.calib_samples.append((ax, ay, az, gx, gy, gz))
                 if len(self.calib_samples) == CALIB_SIZE:
                     self.finish_calibration()
-                del self.buffer[:PACKET_SIZE]
+                continue
+
             imu = Imu()
             imu.header.stamp = self.get_clock().now().to_msg()
             imu.header.frame_id = self.get_parameter('frame_id').value
             imu.orientation_covariance[0] = -1.0
+            imu.angular_velocity_covariance[0] = self.gyro_var[0]
+            imu.angular_velocity_covariance[4] = self.gyro_var[1]
+            imu.angular_velocity_covariance[8] = self.gyro_var[2]
+            imu.linear_acceleration_covariance[0] = self.accel_var[0]
+            imu.linear_acceleration_covariance[4] = self.accel_var[1]
+            imu.linear_acceleration_covariance[8] = self.accel_var[2]
+            imu.angular_velocity.x = gx - self.gyro_bias[0]
+            imu.angular_velocity.y = gy - self.gyro_bias[1]
+            imu.angular_velocity.z = gz - self.gyro_bias[2]
+            imu.linear_acceleration.x = ax
+            imu.linear_acceleration.y = ay
+            imu.linear_acceleration.z = az
+            self.publisher.publish(imu)
 
     def finish_calibration(self):
         columns = list(zip(*self.calib_samples))
@@ -71,4 +88,4 @@ class ImuBridge(Node):
         self.gyro_var = [statistics.pvariance(c) for c in columns[3:]]
         self.gyro_bias = [statistics.fmean(c) for c in columns[3:]]
         self.calib_samples = []
-        self.get_logger().info('Calibration terminée') # Mettre en anglais
+        self.get_logger().info('Calibration Complete')
