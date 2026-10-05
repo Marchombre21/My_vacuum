@@ -39,6 +39,21 @@ Aspi is a home-built robot vacuum. Planned architecture:
   - `fake_esp32.py` (written by the user) — plays the ESP32 for testing `aspi_imu_bridge` without hardware: sends valid 17-byte packets every 10 ms on the serial port given as argument (accel Z = 16384 = 1 g, gyro biases 120/50/90 raw, ±20 random noise on each value). Keep its packet format in sync with the firmware and the bridge.
 - Nav2 and slam_toolbox are meant to be installed with `apt`, not added as source to the workspace.
 
+## Next steps (decided on 2026-10-05)
+
+Wheel encoders, to be sent to the Pi:
+- **Design**: one bridge node only, since two processes can't read the same serial port (each byte read is gone for the other). The bridge reads and decodes the packet, then publishes one topic per data kind (`/imu/data_raw`, plus a wheel topic like `/wheel_ticks` or `/odom`). Later it will also send motor commands to the ESP32 (UART RX line) and can be renamed (e.g. `aspi_esp32_bridge`).
+- **Packet**: one packet, extended. The encoder counts are appended after the 14 IMU bytes (same 100 Hz loop). Send the **total count since startup** as an `i32` (not the count since the last packet), so a dropped packet loses nothing. Update the size, the `struct` format and `tools/fake_esp32.py` together.
+- **ESP32**: read the encoders with the hardware pulse counter (PCNT, esp-hal), in the existing loop (no extra task or interrupt).
+
+Order:
+1. [ ] Identify the encoder hardware. Single-channel slotted disk (e.g. LM393 module) = no direction, to be inferred from the motor command; two-channel A/B quadrature = direction handled by PCNT. Also gather: pulses per wheel turn, wheel diameter, distance between the wheels (needed to compute odometry).
+2. [ ] Test the real ESP32 → Pi link with the IMU only, before changing the packet (Pi UART setup above; at home, since the school VM has no USB-serial).
+3. [ ] ESP32: read the encoders with PCNT, extend the packet.
+4. [ ] Pi: update the bridge and `tools/fake_esp32.py`, publish the wheel data.
+
+Other open items: check the IMU model (`WHO_AM_I`, register 0x75); maybe move `ros2_ws/src/notes.md` to the repo root.
+
 ## Build & flash (ESP32)
 
 - Needs the Xtensa Rust toolchain (`rust-toolchain.toml` → channel `esp`, installed with `espup`) and `espflash`. Each dev machine needs its own install: `rustup`, then `cargo install espup --locked && espup install`, then `cargo install espflash --locked`, and `source ~/export-esp.sh` in the shell. On WSL2, flashing also needs the USB device passed through with `usbipd` from Windows.
