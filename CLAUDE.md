@@ -47,9 +47,21 @@ Wheel encoders, to be sent to the Pi:
 - **ESP32**: read the encoders with the hardware pulse counter (PCNT, esp-hal), in the existing loop (no extra task or interrupt).
 
 Order:
-1. [ ] Identify the encoder hardware. Single-channel slotted disk (e.g. LM393 module) = no direction, to be inferred from the motor command; two-channel A/B quadrature = direction handled by PCNT. Also gather: pulses per wheel turn, wheel diameter, distance between the wheels (needed to compute odometry).
+1. [ ] Identify the encoder hardware. Partly done on 2026-10-06:
+   - Motors: DC gear motors with a magnetic Hall encoder and 65 mm wheels (generic "smart car" kit, likely JGA25-370 style). Wires: red/white = motor +/−, blue/black = encoder power (3.3–5 V; **power it at 3.3 V** so the signals stay safe for the ESP32 GPIOs), yellow/green = channels A/B.
+   - Encoder: **two-channel A/B quadrature**, 11 pulses per **motor** turn → 44 counts per motor turn when PCNT counts every edge of both channels (×4). Direction is handled by PCNT.
+   - Variant bought: **12 V, 130 rpm** (no load). ≈ 0.44 m/s no load, ≈ 0.3–0.35 m/s expected on the robot (L298N drop + load).
+   - Counts per wheel turn = 44 × gear ratio. **Gear ratio to be measured**: often ~1:45 for this variant (unverified guess → ~1980 counts per wheel turn, ~0.1 mm per count). An online "planetary 99:1" result is probably another product (this kit looks like a spur-gear JGA25-370). Measure in step 3: turn the wheel 10 full turns by hand, ratio = count ÷ 440. Wheel circumference = π × 65 ≈ 204 mm.
+   - Still to gather: gear ratio (measurement above), distance between the wheels (center to center, once mounted).
+   - Power: a 12 V or 3S lithium battery (11.1–12.6 V) works with the 78M05 jumper left on. Do **not** power the Pi from the L298N 5 V output (~0.5 A max, the Pi needs ≥ 3 A): use a separate 12 V → 5 V buck converter (≥ 3 A) on the battery.
+   - Motor driver: L298N dual H-bridge module (Zua-YXJ-036, 2 bought; one module drives both wheels) with an on-board 78M05 5 V regulator. See `notes.md` for wiring and the regulator jumper. ESP32 3.3 V logic is enough for its inputs. Motor control (PWM, LEDC/MCPWM on the ESP32) is not planned yet.
 2. [ ] Test the real ESP32 → Pi link with the IMU only, before changing the packet (Pi UART setup above; at home, since the school VM has no USB-serial).
-3. [ ] ESP32: read the encoders with PCNT, extend the packet.
+3. [ ] ESP32: read the encoders with PCNT, extend the packet. Plan given to the user on 2026-10-06 (they write the code; nothing written or compiled yet, API checked against esp-hal 1.1.2 sources):
+   - Pins: left A/B = GPIO25/26, right A/B = GPIO32/33 (avoids used pins 16/17/18/23, strapping 0/2/5/12/15, flash 6–11, and 34–39 which have no internal pull-up). `Input::new(pin, InputConfig::default().with_pull(Pull::Up))`.
+   - PCNT: `Pcnt::new(peripherals.PCNT)`, `unit0` = left, `unit1` = right. A helper `fn setup_quadrature<const N: usize>(unit: &Unit<'_, N>, a: InputSignal, b: InputSignal)` (needed because `Unit<0>` and `Unit<1>` are different types): `set_filter(Some(800))` (10 µs at 80 MHz APB), `clear()`, channel0 ctrl=A edge=B, `set_ctrl_mode(Reverse, Keep)`, `set_input_mode(Increment, Decrement)`; channel1 ctrl=B edge=A, `set_ctrl_mode(Reverse, Keep)`, `set_input_mode(Decrement, Increment)` (×4 counting, same as the esp-hal doc example); then `resume()`. Signals come from `pin.peripheral_input()` (`.clone()` since each is used by both channels). Imports: `esp_hal::pcnt::{Pcnt, unit::Unit, channel::{CtrlMode, EdgeMode}}`, `esp_hal::gpio::interconnect::InputSignal`.
+   - 16 → 32 bits: the hardware counter is `i16` (full after ~16 wheel turns). Never clear it; each loop: `now = unit.value()`, `total = total.wrapping_add(now.wrapping_sub(last) as i32)`, `last = now` (`wrapping_sub` handles the i16 wrap-around; at most ~50 counts per 10 ms, far from 65536). No limits set → esp-hal doc says the counter wraps; **to verify on hardware** (run a motor ~15 s, total must keep growing).
+   - Packet becomes **25 bytes**: `AA 55` | 14 IMU bytes (2–15) | `left_total` i32 BE (16–19, `to_be_bytes()`) | `right_total` i32 BE (20–23) | checksum (24) = sum of bytes 2–23 (computed over `&packet[2..24]` after filling).
+   - The right wheel will count backwards when the robot goes forward (mirrored motors): fix the sign on the Pi side. Until step 4 is done, the Pi bridge (expects 17 bytes) is broken; Pi format will be `'>7h2i'`.
 4. [ ] Pi: update the bridge and `tools/fake_esp32.py`, publish the wheel data.
 
 Other open items: check the IMU model (`WHO_AM_I`, register 0x75); maybe move `ros2_ws/src/notes.md` to the repo root.

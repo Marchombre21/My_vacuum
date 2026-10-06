@@ -15,6 +15,11 @@ use esp_hal::i2c::master::{Config as I2cConfig, I2c};
 use esp_hal::time::Rate;
 use esp_hal::timer::timg::TimerGroup;
 use esp_hal::uart::{Config, Uart};
+use esp_hal::gpio::{Input, InputConfig, Pull, interconnect::InputSignal}
+use esp_hal::pcnt::{
+    channel::{CtrlMode, EdgeMode}
+    unit::Unit
+};
 
 use esp_println as _;
 
@@ -55,6 +60,12 @@ async fn main(spawner: Spawner) -> ! {
         .unwrap()
         .with_rx(peripherals.GPIO16)
         .with_tx(peripherals.GPIO17);
+    
+    let enc_config = InputConfig::default().with_pull(Pull::Up);
+    let left_a = Input::new(peripherals.GPIO25, enc_config);
+    let left_b = Input::new(peripherals.GPIO26, enc_config);
+    let right_a = Input::new(peripherals.GPIO32, enc_config);
+    let right_b = Input::new(peripherals.GPIO33, enc_config);
 
     // Au démarrage, le mpu 6500 est en mode veille et c'est le registre 0x6B qui contrôle ça. En écrivant 0x00 sur ce registre, ça met donc les 8 bits de ce registre à 0 et ça désactive donc le mode veille.
     match i2c_bus.write_async(MPU_ADDR, &[0x6B, 0x00]).await {
@@ -101,4 +112,23 @@ async fn main(spawner: Spawner) -> ! {
         }
         ticker.next().await;
     }
+}
+
+fn setup_quadrature<const N: usize>(unit: &Unit<'_, N>, a: InputSignal, b: InputSignal) {
+    unit.set_filter(Some(800)).unwrap();
+    unit.clear();
+
+    let ch0 = &unit.channel0;
+    ch0.set_ctrl_signal(a.clone());
+    ch0.set_edge_signal(b.clone());
+    ch0.set_ctrl_mode(CtrlMode::Reverse, CtrlMode::Keep);
+    ch0.set_input_mode(EdgeMode::Increment, EdgeMode::Decrement);
+
+    let ch1 = &unit.channel1;
+    ch1.set_ctrl_signal(b);
+    ch1.set_edge_signal(a);
+    ch1.set_ctrl_mode(CtrlMode::Reverse, CtrlMode::Keep);
+    ch1.set_input_mode(EdgeMode::Decrement, EdgeMode::Increment);
+
+    unit.resume();
 }
