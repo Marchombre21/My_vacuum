@@ -1,11 +1,11 @@
 [package]
 edition      = "2024"
-name         = "gyroscope"
+name         = "aspi_esp32"
 rust-version = "1.88"
 version      = "0.1.0"
 
 [[bin]]
-name = "gyroscope"
+name = "aspi_esp32"
 path = "./src/bin/main.rs"
 
 [dependencies]

@@ -592,7 +592,7 @@ dependencies = [
  "esp-riscv-rt",
  "esp-rom-sys",
  "esp-sync",
- "esp32",
+ "esp32 0.40.2",
  "esp32c2",
  "esp32c3",
  "esp32c6",
@@ -670,7 +670,7 @@ dependencies = [
  "cfg-if",
  "document-features",
  "esp-metadata-generated",
- "esp32",
+ "esp32 0.40.2",
 ]
 
 [[package]]
@@ -710,6 +710,22 @@ dependencies = [
  "esp-metadata-generated",
  "riscv",
  "xtensa-lx",
+]
+
+[[package]]
+name = "esp32"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "defmt",
+ "embassy-executor",
+ "embassy-time",
+ "esp-bootloader-esp-idf",
+ "esp-hal",
+ "esp-println",
+ "esp-rtos",
+ "heapless 0.9.3",
+ "static_cell",
 ]
 
 [[package]]
@@ -854,22 +870,6 @@ checksum = "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a"
 dependencies = [
  "typenum",
  "version_check",
-]
-
-[[package]]
-name = "gyroscope"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "defmt",
- "embassy-executor",
- "embassy-time",
- "esp-bootloader-esp-idf",
- "esp-hal",
- "esp-println",
- "esp-rtos",
- "heapless 0.9.3",
- "static_cell",
 ]
 
 [[package]]

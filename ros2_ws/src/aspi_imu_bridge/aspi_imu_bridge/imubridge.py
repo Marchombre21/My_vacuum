@@ -6,7 +6,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import Imu
 from serial import Serial
 
-PACKET_SIZE = 17
+PACKET_SIZE = 25
 ACC_SENSI = 16384
 GYRO_SENSI = 131
 ACC_CONV_M_PER_S = 9.80665

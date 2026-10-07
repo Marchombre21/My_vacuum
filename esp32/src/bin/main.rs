@@ -15,10 +15,11 @@ use esp_hal::i2c::master::{Config as I2cConfig, I2c};
 use esp_hal::time::Rate;
 use esp_hal::timer::timg::TimerGroup;
 use esp_hal::uart::{Config, Uart};
-use esp_hal::gpio::{Input, InputConfig, Pull, interconnect::InputSignal}
+use esp_hal::gpio::{Input, InputConfig, Pull, interconnect::InputSignal};
 use esp_hal::pcnt::{
-    channel::{CtrlMode, EdgeMode}
-    unit::Unit
+    channel::{CtrlMode, EdgeMode},
+    unit::Unit,
+    Pcnt
 };
 
 use esp_println as _;
@@ -47,6 +48,7 @@ async fn main(spawner: Spawner) -> ! {
     esp_rtos::start(timg0.timer0, sw_interrupt.software_interrupt0);
 
     let _ = spawner;
+
     let mut i2c_bus = I2c::new(
         peripherals.I2C0,
         I2cConfig::default().with_frequency(Rate::from_khz(400)),
@@ -67,6 +69,11 @@ async fn main(spawner: Spawner) -> ! {
     let right_a = Input::new(peripherals.GPIO32, enc_config);
     let right_b = Input::new(peripherals.GPIO33, enc_config);
 
+    let pcnt = Pcnt::new(peripherals.PCNT);
+
+    setup_quadrature(&pcnt.unit0, left_a.peripheral_input(), left_b.peripheral_input());
+    setup_quadrature(&pcnt.unit1, right_a.peripheral_input(), right_b.peripheral_input());
+
     // Au démarrage, le mpu 6500 est en mode veille et c'est le registre 0x6B qui contrôle ça. En écrivant 0x00 sur ce registre, ça met donc les 8 bits de ce registre à 0 et ça désactive donc le mode veille.
     match i2c_bus.write_async(MPU_ADDR, &[0x6B, 0x00]).await {
         Err(_) => {
@@ -80,8 +87,13 @@ async fn main(spawner: Spawner) -> ! {
     let mut registers;
     let first_register = [0x3B];
 
-    let mut packet = [0u8; 17];
+    let mut packet = [0u8; 25];
     let mut ticker = Ticker::every(Duration::from_millis(10));
+
+    let mut left_last = pcnt.unit0.value();
+    let mut left_total: i32 = 0;
+    let mut right_last = pcnt.unit1.value();
+    let mut right_total: i32 = 0;
 
     loop {
         registers = [0_u8; 14];
@@ -95,16 +107,26 @@ async fn main(spawner: Spawner) -> ! {
             .await
             .unwrap();
 
-        let mut checksum: u8 = 0;
-        for b in &registers {
-            checksum = checksum.wrapping_add(*b);
-        }
+        let mut now = pcnt.unit0.value();
+        left_total = left_total.wrapping_add(now.wrapping_sub(left_last) as i32);
+        left_last = now;
 
+        now = pcnt.unit1.value();
+        right_total = right_total.wrapping_add(now.wrapping_sub(right_last) as i32);
+        right_last = now;
+        
         // On place deux octets de 'démarrage' au début pour que la réception sache quand commencer la lecture.
         packet[0] = 0xAA;
         packet[1] = 0x55;
         packet[2..16].copy_from_slice(&registers);
-        packet[16] = checksum;
+        packet[16..20].copy_from_slice(&left_total.to_be_bytes());
+        packet[20..24].copy_from_slice(&right_total.to_be_bytes());
+        
+        let mut checksum: u8 = 0;
+        for b in &packet[2..24] {
+            checksum = checksum.wrapping_add(*b);
+        }
+        packet[24] = checksum;
 
         let mut sent = 0;
         while sent < packet.len() {

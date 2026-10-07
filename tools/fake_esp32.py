@@ -13,24 +13,29 @@ from serial import Serial
 PORT = sys.argv[1]
 
 
-def make_packet(values):
+def make_packet(values, left_total, right_total):
 
-    data = struct.pack('>7h', *values)
+    data = struct.pack('>7h2i', *values, left_total, right_total)
     checksum = sum(data) % 256
     return b'\xaa\x55' + data + bytes([checksum])
 
 
 def main():
+    rt = 0
+    lt = 0
     ser = Serial(PORT, 115200)
     try:
         while True:
+            rt -= 5
+            lt += 5
             values = [0 + random.randint(-20, 20),
                       0 + random.randint(-20, 20),
                       16384 + random.randint(-20, 20),
-                      25, 120 + random.randint(-20, 20),
+                      25,
+                      120 + random.randint(-20, 20),
                       50 + random.randint(-20, 20),
                       90 + random.randint(-20, 20)]
-            ser.write(make_packet(values))
+            ser.write(make_packet(values, lt, rt))
             time.sleep(0.01)
     finally:
         ser.close()
