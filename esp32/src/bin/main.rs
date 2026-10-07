@@ -61,7 +61,8 @@ async fn main(spawner: Spawner) -> ! {
     let mut uart2 = Uart::new(peripherals.UART2, Config::default())
         .unwrap()
         .with_rx(peripherals.GPIO16)
-        .with_tx(peripherals.GPIO17);
+        .with_tx(peripherals.GPIO17)
+        .into_async();
     
     let enc_config = InputConfig::default().with_pull(Pull::Up);
     let left_a = Input::new(peripherals.GPIO25, enc_config);
@@ -130,7 +131,7 @@ async fn main(spawner: Spawner) -> ! {
 
         let mut sent = 0;
         while sent < packet.len() {
-            sent += uart2.write(&packet[sent..]).unwrap();
+            sent += uart2.write_async(&packet[sent..]).await.unwrap();
         }
         ticker.next().await;
     }

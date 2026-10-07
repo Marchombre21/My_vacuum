@@ -3,7 +3,7 @@ import statistics
 import struct
 
 from rclpy.node import Node
-from sensor_msgs.msg import Imu
+from sensor_msgs.msg import Imu, JointState
 from serial import Serial
 
 PACKET_SIZE = 25
@@ -20,10 +20,12 @@ class ImuBridge(Node):
         super().__init__('imu_bridge')
         self.declare_parameter('port', '/dev/serial0')
         self.declare_parameter('frame_id', 'imu_link')
+        self.declare_parameter('ticks_per_rev', 1980)
         port = self.get_parameter('port').value
         self.ser = Serial(port, 115200, timeout=0)
         self.buffer = bytearray()
-        self.publisher = self.create_publisher(Imu, '/imu/data_raw', 10)
+        self.imu_publisher = self.create_publisher(Imu, '/imu/data_raw', 10)
+        self.js_publisher = self.create_publisher(JointState, '/joint_states', 10)
         self.timer = self.create_timer(0.005, self.read_serial)
         self.calib_samples = []
         self.gyro_bias = None
@@ -48,6 +50,8 @@ class ImuBridge(Node):
             # Voir notes
             values = struct.unpack('>7h', self.buffer[2:16])
             accel_x, accel_y, accel_z, temp_raw, gyro_x, gyro_y, gyro_z = values
+            left_wheel_value, right_wheel_value = struct.unpack('>2i', self.buffer[16:24])
+            right_wheel_value = -right_wheel_value
             del self.buffer[:PACKET_SIZE]
 
             ax = accel_x / ACC_SENSI * ACC_CONV_M_PER_S
@@ -64,8 +68,12 @@ class ImuBridge(Node):
                     self.finish_calibration()
                 continue
 
+            clk_now = self.get_clock().now().to_msg()
+
             imu = Imu()
-            imu.header.stamp = self.get_clock().now().to_msg()
+            js = JointState()
+            imu.header.stamp = clk_now
+            js.header.stamp = clk_now
             imu.header.frame_id = self.get_parameter('frame_id').value
             imu.orientation_covariance[0] = -1.0
             imu.angular_velocity_covariance[0] = self.gyro_var[0]
@@ -80,7 +88,15 @@ class ImuBridge(Node):
             imu.linear_acceleration.x = ax
             imu.linear_acceleration.y = ay
             imu.linear_acceleration.z = az
-            self.publisher.publish(imu)
+            self.imu_publisher.publish(imu)
+
+            left_pos = left_wheel_value / self.get_parameter('ticks_per_rev').value * (math.pi * 2)
+            right_pos = right_wheel_value / self.get_parameter('ticks_per_rev').value * (math.pi * 2)
+
+            js.name = ['left_wheel_joint', 'right_wheel_joint']
+            js.position = [left_pos, right_pos]
+
+            self.js_publisher.publish(js)
 
     def finish_calibration(self):
         columns = list(zip(*self.calib_samples))
