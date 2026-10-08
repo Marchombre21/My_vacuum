@@ -25,6 +25,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'odom_maker = aspi_odometry.aspi_odom:main',
         ],
     },
 )
