@@ -22,7 +22,7 @@ class Odom(Node):
             JointState, '/joint_states', self.odom_maker, 10
         )
         self.publisher = self.create_publisher(Odometry, '/odom', 10)
-        self.declare_parameter('radius', 0.0325)
+        self.declare_parameter('radius', 0.0335)
         self.declare_parameter('wheels_distance', 0.2)
         self.declare_parameter('publish_tf', True)
         self.previous_left_angle: float = 0.0
