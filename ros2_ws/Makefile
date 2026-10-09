@@ -2,6 +2,7 @@ SHELL := /bin/bash
 
 build:
 	colcon build --symlink-install
+	source install/setup.zsh
 
 run:
 # 	ros2 run launch

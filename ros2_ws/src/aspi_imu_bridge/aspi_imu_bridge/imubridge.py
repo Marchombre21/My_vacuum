@@ -3,7 +3,9 @@ import statistics
 import struct
 
 from rclpy.node import Node
+
 from sensor_msgs.msg import Imu, JointState
+
 from serial import Serial
 
 PACKET_SIZE = 25
@@ -25,7 +27,9 @@ class ImuBridge(Node):
         self.ser = Serial(port, 115200, timeout=0)
         self.buffer = bytearray()
         self.imu_publisher = self.create_publisher(Imu, '/imu/data_raw', 10)
-        self.js_publisher = self.create_publisher(JointState, '/joint_states', 10)
+        self.js_publisher = self.create_publisher(
+            JointState, '/joint_states', 10
+        )
         self.timer = self.create_timer(0.005, self.read_serial)
         self.calib_samples = []
         self.gyro_bias = None
@@ -34,7 +38,7 @@ class ImuBridge(Node):
         self.buffer += self.ser.read(self.ser.in_waiting)
         while True:
             i = self.buffer.find(b'\xaa\x55')
-            if (i == -1):
+            if i == -1:
                 del self.buffer[:-1]
                 break
             else:
@@ -43,14 +47,20 @@ class ImuBridge(Node):
             if len(self.buffer) < PACKET_SIZE:
                 break
 
-            if (sum(self.buffer[2:PACKET_SIZE - 1]) % 256) != self.buffer[PACKET_SIZE - 1]:
+            if (sum(self.buffer[2: PACKET_SIZE - 1]) % 256) != self.buffer[
+                PACKET_SIZE - 1
+            ]:
                 del self.buffer[0]
                 continue
 
             # Voir notes
             values = struct.unpack('>7h', self.buffer[2:16])
-            accel_x, accel_y, accel_z, temp_raw, gyro_x, gyro_y, gyro_z = values
-            left_wheel_value, right_wheel_value = struct.unpack('>2i', self.buffer[16:24])
+            accel_x, accel_y, accel_z, temp_raw, gyro_x, gyro_y, gyro_z = (
+                values
+            )
+            left_wheel_value, right_wheel_value = struct.unpack(
+                '>2i', self.buffer[16:24]
+            )
             right_wheel_value = -right_wheel_value
             del self.buffer[:PACKET_SIZE]
 
@@ -90,8 +100,16 @@ class ImuBridge(Node):
             imu.linear_acceleration.z = az
             self.imu_publisher.publish(imu)
 
-            left_pos = left_wheel_value / self.get_parameter('ticks_per_rev').value * (math.pi * 2)
-            right_pos = right_wheel_value / self.get_parameter('ticks_per_rev').value * (math.pi * 2)
+            left_pos = (
+                left_wheel_value
+                / self.get_parameter('ticks_per_rev').value
+                * (math.pi * 2)
+            )
+            right_pos = (
+                right_wheel_value
+                / self.get_parameter('ticks_per_rev').value
+                * (math.pi * 2)
+            )
 
             js.name = ['left_wheel_joint', 'right_wheel_joint']
             js.position = [left_pos, right_pos]

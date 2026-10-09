@@ -1,4 +1,4 @@
-from aspiodom import Odom
+from aspi_odometry.aspiodom import Odom
 import rclpy
 
 

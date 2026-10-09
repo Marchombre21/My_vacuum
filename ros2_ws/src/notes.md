@@ -98,7 +98,34 @@
     Δx = d × cos(θ)      Δy = d × sin(θ)       (math.cos et math.sin en Python)
     cos et sin = la part de l'avance qui va vers x et celle qui va vers y :
     θ = 0 → tout sur x ; θ = π/2 (90°) → tout sur y ; θ = π/4 (45°) → 0,707 de chaque ; θ = π → on recule sur x.
-    Plus précis : utiliser la direction du milieu du mouvement, θ + Δθ/2, dans cos et sin.
+
+            y (gauche)
+            ▲
+            │        ● arrivée
+            │       ╱│
+            │    d ╱ │ Δy = d × sin(θ)
+            │     ╱  │
+            │    ╱ θ │
+            │   ●────┘
+            │ départ  Δx = d × cos(θ)
+            └──────────────────► x (devant au départ)
+
+    On connaît la distance d et la direction θ ; la carte veut « combien en x » et « combien en y ».
+    cos(θ) et sin(θ) sont des fractions entre −1 et 1 : multipliées par d, elles donnent ces deux morceaux.
+
+    | Le robot regarde…        | θ         | cos | sin  | pour 1 m parcouru        |
+    |--------------------------|-----------|-----|------|--------------------------|
+    | droit devant (le départ) | 0         | 1   | 0    | +1 m en x                |
+    | en diagonale             | π/4 (45°) | 0,71 | 0,71 | +0,71 m en x et en y    |
+    | à gauche                 | π/2 (90°) | 0   | 1    | +1 m en y                |
+    | en arrière               | π (180°)  | −1  | 0    | −1 m en x (on recule)    |
+
+    Pourquoi 0,71 et pas 0,5 en diagonale : traverser une pièce carrée en biais sur 1 m ne fait avancer
+    que de 71 cm le long de chaque mur (le biais est plus court que « un mur puis l'autre »).
+    math.cos et math.sin attendent des radians : rien à convertir, tout le projet est déjà en radians.
+
+    Plus précis : utiliser la direction du milieu du mouvement, θ + Δθ/2, dans cos et sin
+    (pendant ce petit trajet, le robot a un peu tourné : on prend la moyenne entre la direction du début et celle de la fin).
     Puis : x += Δx, y += Δy, θ += Δθ.
 
 ## 5. Les vitesses
@@ -110,6 +137,10 @@
     - La transformation TF odom → base_link, avec les mêmes x, y, θ (utilisée par RViz et slam_toolbox).
     - L'angle est rangé dans un « quaternion » (4 nombres pour une orientation en 3D). Robot à plat :
       x = 0, y = 0, z = sin(θ/2), w = cos(θ/2).
+      Le θ/2 vient de la définition du quaternion (maths avancées) : à prendre comme une recette.
+      Vérification : θ = 0 (cap de départ) → z = 0, w = 1 ; θ = π (demi-tour) → z = 1, w = 0.
+      Piège : inverser sin et cos donne z = 1, w = 0 au départ, donc un robot vu à l'envers (déjà arrivé une fois dans le TF).
+      Astuce : calculer (z, w) dans une seule fonction utilisée par /odom et par le TF, pour qu'ils ne puissent pas se contredire.
 
 ## Test avec fake_esp32.py
     +5 impulsions par paquet sur chaque roue → 5 / 1980 × 2π ≈ 0,0159 rad → × 0,0325 ≈ 0,5 mm par paquet.
