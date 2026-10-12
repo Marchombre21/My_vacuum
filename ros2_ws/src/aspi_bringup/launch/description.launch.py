@@ -11,9 +11,10 @@ def generate_launch_description():
 
     use_sim_time = LaunchConfiguration('use_sim_time')
 
-    urdf_file_name = 'urdf/aspi.urdf.xacro'
+    urdf_file_name = 'aspi.urdf.xacro'
     xacro_file = os.path.join(
         get_package_share_directory('aspi_description'),
+        'urdf',
         urdf_file_name)
     urdf = ParameterValue(Command(['xacro ', xacro_file]), value_type=str)
 
