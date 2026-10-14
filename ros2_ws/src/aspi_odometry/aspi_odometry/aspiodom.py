@@ -2,7 +2,7 @@ import math
 
 from builtin_interfaces.msg import Time
 
-from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import Quaternion, TransformStamped
 
 from nav_msgs.msg import Odometry
 
@@ -60,13 +60,14 @@ class Odom(Node):
             left_distance, right_distance = self.calculate_distance(
                 left_pos, right_pos
             )
-            global_distance = (left_distance + right_distance) / 2
-            wheels_d = self.get_parameter('wheels_distance').value
-            rotation = (right_distance - left_distance) / wheels_d
-            delta_x = global_distance * math.cos(self.theta + (rotation / 2))
-            delta_y = global_distance * math.sin(self.theta + (rotation / 2))
-            self.x += delta_x
-            self.y += delta_y
+            global_distance, rotation = self.odom_dist_rot(
+                left_distance,
+                right_distance,
+                self.get_parameter('wheels_distance').value,
+            )
+            self.x, self.y = self.odom_steps(
+                global_distance, rotation, self.theta, self.x, self.y
+            )
             self.theta += rotation
             self.speed, self.rot_speed = self.calculate_speed(
                 states.header.stamp,
@@ -76,6 +77,22 @@ class Odom(Node):
             self.prev_time = states.header.stamp
             self.publisher.publish(self.create_msg(states.header.stamp))
             self.publish_tf(states.header.stamp)
+
+    @staticmethod
+    def odom_dist_rot(
+        left_d: float, right_d: float, w_d: float
+    ) -> tuple[float, float]:
+        global_distance = (left_d + right_d) / 2
+        rotation = (right_d - left_d) / w_d
+        return (global_distance, rotation)
+
+    @staticmethod
+    def odom_steps(
+        global_d: float, rotation: float, theta: float, x: float, y: float
+    ) -> tuple[float, float]:
+        delta_x = global_d * math.cos(theta + (rotation / 2))
+        delta_y = global_d * math.sin(theta + (rotation / 2))
+        return (x + delta_x, y + delta_y)
 
     def calculate_distance(
         self, js_left: float, js_right: float
@@ -103,8 +120,7 @@ class Odom(Node):
         msg.pose.pose.position.x = self.x
         msg.pose.pose.position.y = self.y
         msg.pose.pose.position.z = 0.0
-        msg.pose.pose.orientation.z = math.sin(self.theta / 2)
-        msg.pose.pose.orientation.w = math.cos(self.theta / 2)
+        msg.pose.pose.orientation = self.yaw_to_quaternion(self.theta)
         msg.twist.twist.linear.x = self.speed
         msg.twist.twist.angular.z = self.rot_speed
         msg.pose.covariance = self.pose_cov
@@ -138,6 +154,12 @@ class Odom(Node):
             tf_msg.transform.translation.x = self.x
             tf_msg.transform.translation.y = self.y
             tf_msg.transform.translation.z = 0.0
-            tf_msg.transform.rotation.z = math.sin(self.theta / 2)
-            tf_msg.transform.rotation.w = math.cos(self.theta / 2)
+            tf_msg.transform.rotation = self.yaw_to_quaternion(self.theta)
             self.broadcaster.sendTransform(tf_msg)
+
+    @staticmethod
+    def yaw_to_quaternion(theta: float) -> Quaternion:
+        q = Quaternion()
+        q.z = math.sin(theta / 2)
+        q.w = math.cos(theta / 2)
+        return q

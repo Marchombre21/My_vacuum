@@ -7,18 +7,15 @@ run:
 # 	ros2 run launch
 
 test:
-# 	$(PYTHON) -m pytest -v
+	colcon test $(if $(PKG),--packages-select $(PKG))
+	colcon test-result $(if $(PKG),--test-result-base build/$(PKG)) --verbose
 
-clean-all:
+clean-packages:
 	rm -rf {build,install,log}
 
-lint:
-# 	python3 -m flake8 .
-# 	python3 -m mypy . \
-# 	--warn-return-any \
-# 	--warn-unused-ignores \
-# 	--ignore-missing-imports \
-# 	--disallow-untyped-defs \
-# 	--check-untyped-defs \
+clean-pycache:
+	find src -name __pycache__ -type d -prune -exec rm -rf {} +
 
-.PHONY: build run test clean-all lint
+clean-all: clean-packages clean-pycache
+
+.PHONY: build run test clean-all clean-packages clean-pycache

@@ -1,4 +1,5 @@
 from aspi_odometry.aspiodom import Odom
+
 import rclpy
 
 
@@ -9,4 +10,4 @@ def main():
         rclpy.spin(node)
     finally:
         node.destroy_node()
-        rclpy.shutdown() 
+        rclpy.shutdown()
