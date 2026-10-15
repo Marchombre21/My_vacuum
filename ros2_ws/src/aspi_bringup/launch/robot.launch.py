@@ -24,6 +24,27 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(description_file),
         launch_arguments={'use_sim_time': use_sim_time}.items(),
     )
+
+    slam_launch_file = os.path.join(
+        get_package_share_directory('slam_toolbox'),
+        'launch',
+        'online_async_launch.py'
+    )
+
+    slam_yaml = os.path.join(
+        get_package_share_directory('aspi_bringup'),
+        'config',
+        'slam_toolbox.yaml'
+    )
+
+    slam_node = IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(slam_launch_file),
+            launch_arguments={
+                'slam_params_file': slam_yaml,
+                'use_sim_time': use_sim_time,
+            }.items(),
+        )
+
     lidar_port = LaunchConfiguration('lidar_port')
 
     return LaunchDescription(
@@ -43,6 +64,7 @@ def generate_launch_description():
                 default_value='false',
                 description='Use simulation clock if true',
             ),
+            slam_node,
             rsp_node,
             Node(
                 package='aspi_imu_bridge',

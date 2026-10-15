@@ -149,3 +149,43 @@
 ## Limite
     Les petites erreurs (patinage, écartement approximatif) s'additionnent : l'odométrie seule dérive.
     L'IMU (robot_localization) et le lidar (slam_toolbox) corrigeront plus tard.
+
+# USB et liaison série
+
+## La liaison série
+    On envoie les bits un par un, l'un après l'autre, sur un seul fil. Exemple : l'UART ESP32 → Pi.
+    - TX (j'envoie) d'un côté, branché sur RX (je reçois) de l'autre.
+    - GND commun : la référence pour savoir ce qui est « haut » (1) ou « bas » (0).
+    - Vitesse convenue à l'avance (baud rate, en bits par seconde) : pas d'horloge partagée,
+      chacun compte le temps de son côté. Vitesses différentes → charabia.
+    Simple et robuste, mais elle ne sait pas qui est au bout, ne relie que deux appareils
+    et n'apporte pas d'alimentation.
+
+## L'USB
+    - Un chef, l'« hôte » (le Pi, le PC), et des appareils branchés dessus (plusieurs, via un hub).
+    - Au branchement, l'hôte demande « qui es-tu ? » ; l'appareil donne sa carte d'identité
+      (fabricant, modèle, numéro de série, type : clavier, clé USB, port série…). C'est l'« énumération ».
+    - Linux charge alors le bon pilote (driver), le programme qui sait parler à ce type d'appareil.
+    - Le câble apporte aussi du 5 V.
+
+## Le convertisseur USB-série
+    Le lidar ne parle qu'en série. Une petite puce (souvent une CP2102 chez Slamtec) fait l'interprète :
+    côté USB elle dit « je suis un port série », côté lidar elle envoie/reçoit les bits sur TX/RX.
+    Linux crée un fichier /dev/ttyUSB0 : le nœud rplidar lit et écrit dedans comme dans un port série
+    ordinaire (d'où les paramètres serial_port et serial_baudrate).
+    Le baud rate est fixé par le firmware de chaque modèle : C1 = 460800 (voir rplidar/launch/).
+    La carte ESP32 a la même sorte de puce (CP2102 ou CH340) à côté de son port USB : c'est par là
+    que passent le flashage et les logs (UART0). Branchée en USB sur le Pi, même juste pour
+    l'alimenter, elle devient donc un deuxième /dev/ttyUSB*.
+    (L'UART2 câblée sur les broches GPIO du Pi est une autre liaison : /dev/ttyAMA0 ou /dev/serial0.)
+
+## Pourquoi /dev/serial/by-id/ plutôt que /dev/ttyUSB<numéro>
+    Linux donne les numéros dans l'ordre où il découvre les appareils : le premier trouvé est ttyUSB0.
+    Cet ordre peut changer d'un démarrage à l'autre, ou après un débranchement/rebranchement.
+    → un jour le lidar est ttyUSB0, le lendemain ttyUSB1, et le nœud parle à l'ESP32 par erreur.
+    Dans /dev/serial/by-id/, Linux (service udev) crée un raccourci nommé d'après la carte d'identité USB :
+        /dev/serial/by-id/usb-Silicon_Labs_CP2102N_..._a1b2c3d4-if00-port0 -> ../../ttyUSB1
+    Le nom reste le même pour un appareil donné, seule la flèche change. Voir : ls -l /dev/serial/by-id/
+    Piège : deux puces du même modèle ne diffèrent que par le numéro de série, et certaines (CH340)
+    n'en ont pas → même nom. Alors utiliser /dev/serial/by-path/ (nommé d'après le port USB physique
+    du Pi : marche tant qu'on ne change pas les câbles de prise).

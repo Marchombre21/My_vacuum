@@ -10,6 +10,7 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <exec_depend>aspi_description</exec_depend>
+  <exec_depend>slam_toolbox</exec_depend>
   <exec_depend>aspi_imu_bridge</exec_depend>
   <exec_depend>aspi_odometry</exec_depend>
   <exec_depend>rplidar_ros</exec_depend>
