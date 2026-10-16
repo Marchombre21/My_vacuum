@@ -189,3 +189,80 @@
     Piège : deux puces du même modèle ne diffèrent que par le numéro de série, et certaines (CH340)
     n'en ont pas → même nom. Alors utiliser /dev/serial/by-path/ (nommé d'après le port USB physique
     du Pi : marche tant qu'on ne change pas les câbles de prise).
+
+# Lidar et SLAM
+    Chaîne : rplidar_node → /scan → slam_toolbox → /map.
+    slam_toolbox lit aussi les TF odom → base_link (odométrie : où est à peu près le robot)
+    et base_link → laser (URDF : où est le lidar sur le robot). Il publie /map et la TF map → odom.
+
+## Ce que publie rplidar : sensor_msgs/LaserScan
+    Le lidar tourne ~10 fois par seconde et mesure une distance dans plein de directions par tour.
+        header.frame_id = "laser"     mesures faites depuis le repère "laser"
+        angle_min       = -3.14       angle de la 1re mesure (radians, -π = derrière)
+        angle_increment = 0.0123      écart d'angle entre deux mesures
+        range_min / range_max         distances en dessous / au-dessus desquelles on ignore
+        ranges = [2.31, 2.30, inf, 0.85, ...]   une distance en mètres par direction
+    C'est une simple liste de distances. L'angle d'une mesure se déduit de sa place dans la liste :
+        angle de la mesure n° i = angle_min + i × angle_increment
+    inf = rien vu dans cette direction (trop loin, ou surface qui ne renvoie pas le laser).
+    rplidar_ros transforme peu : il reçoit les octets du lidar par l'USB (comme le bridge avec
+    les paquets de l'ESP32) et range les distances dans cette liste.
+    Voir : ros2 topic echo /scan --once
+
+## Ce que fait slam_toolbox
+    SLAM = localisation et cartographie en même temps : pour dessiner la carte il faut savoir où est
+    le robot, et pour savoir où est le robot il faut la carte. Il fait les étapes suivantes à chaque scan.
+
+### 1. Des distances aux points
+    Chaque (angle, distance) devient un point : x = distance × cos(angle), y = distance × sin(angle)
+    (même cos/sin que l'odométrie). Un scan devient un « dessin en pointillés » des murs autour du
+    lidar, que les TF replacent là où est le robot.
+
+### 2. Corriger la position du robot (scan matching)
+    L'odométrie dérive (glissements, petites erreurs qui s'additionnent). slam_toolbox compare le
+    nouveau dessin à ce qu'il connaît déjà, comme un papier calque qu'on décale et qu'on tourne un peu
+    sur un dessin jusqu'à ce que les traits se superposent le mieux. Il essaie des petits décalages
+    autour de ce que dit l'odométrie (correlation_search_space_resolution: 0.01 = pas de 1 cm) et garde
+    la meilleure superposition comme position corrigée.
+
+### 3. Garder des « photos » et fermer les boucles
+    Il ne garde pas tous les scans : une photo seulement quand le robot a avancé de 0,5 m ou tourné
+    de 0,5 rad (minimum_travel_distance / minimum_travel_heading), mémorisée avec sa position.
+    Quand le robot revient dans un endroit déjà vu, il le reconnaît (do_loop_closing: true), voit
+    qu'il s'est trompé de, par exemple, 20 cm sur le tour de la pièce, répartit cette erreur sur
+    toutes les photos du trajet, et toute la carte se redresse d'un coup.
+
+### 4. Fabriquer le tableau
+    La carte est un quadrillage, comme du papier à petits carreaux. resolution: 0.05 → carreaux de
+    5 cm × 5 cm. Une pièce de 10 m × 10 m = 200 × 200 = 40 000 carreaux.
+    Pour chaque mesure, il trace le rayon laser du lidar jusqu'au point touché :
+        L . . . . . . #
+        L = lidar, . = carreau traversé (on a vu à travers : libre), # = carreau touché (obstacle)
+    Pour chaque carreau il compte combien de fois il a été touché et combien de fois traversé, puis :
+        touché ÷ (touché + traversé)
+        9 touchés, 1 traversé  → 9/10  → obstacle
+        0 touché, 30 traversés → 0/30  → libre
+        jamais aucun rayon     → inconnu
+    Ce vote fait qu'un objet vu une seule fois (une personne qui passe) ne laisse pas de trace durable.
+    Le tableau est redessiné toutes les 5 s (map_update_interval: 5.0).
+
+## Ce qu'il publie sur /map : nav_msgs/OccupancyGrid
+        info.resolution = 0.05        taille d'un carreau (m)
+        info.width      = 200         carreaux par ligne
+        info.height     = 200         nombre de lignes
+        info.origin     = (x, y, θ)   où est le carreau du coin, dans le repère "map"
+        data = [-1, -1, 0, 0, 100, ...]   une valeur par carreau
+    0 = libre, 100 = obstacle, -1 = inconnu (valeurs intermédiaires possibles, mais slam_toolbox
+    publie surtout ces trois-là).
+    Le tableau est mis à plat en une seule longue liste, ligne après ligne, comme on lit un livre :
+        carreau (colonne c, ligne l) → position l × width + c
+        ex. colonne 3 de la ligne 2 : 2 × 200 + 3 = 403
+    RViz colorie chaque carreau : blanc = libre, noir = obstacle, gris = inconnu.
+    Voir : ros2 interface show nav_msgs/msg/OccupancyGrid
+
+## La TF map → odom
+    slam_toolbox ne « déplace » pas le robot : le nœud d'odométrie continue de publier odom → base_link,
+    avec sa dérive. slam_toolbox publie le décalage entre la carte et le repère de l'odométrie
+    (« odom est décalé de 12 cm et tourné de 2° par rapport à la carte »).
+    Chaîne complète : map → odom → base_link → laser. La position corrigée du robot sur la carte,
+    c'est la combinaison des deux.

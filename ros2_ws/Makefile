@@ -3,9 +3,11 @@ SHELL := /bin/bash
 build:
 	colcon build --symlink-install
 
-run:
-# 	ros2 run launch
+run-fake-esp:
+	./../tools/fake_esp32.sh
 
+run-launch:
+	ros2 launch aspi_bringup robot.launch.py $(if $(USB), esp_port:='$(USB)')
 test:
 	colcon test $(if $(PKG),--packages-select $(PKG))
 	colcon test-result $(if $(PKG),--test-result-base build/$(PKG)) --verbose
@@ -18,4 +20,4 @@ clean-pycache:
 
 clean-all: clean-packages clean-pycache
 
-.PHONY: build run test clean-all clean-packages clean-pycache
+.PHONY: build run-fake-esp run-launch test clean-all clean-packages clean-pycache
